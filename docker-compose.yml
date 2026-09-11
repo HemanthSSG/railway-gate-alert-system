@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database with PostGIS
+  postgres:
+    image: postgis/postgis:15-3.3
+    container_name: railway_postgres
+    environment:
+      POSTGRES_USER: railway_user
+      POSTGRES_PASSWORD: railway_password
+      POSTGRES_DB: railway_gate_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/scripts/init_db.sql:/docker-entrypoint-initdb.d/01-init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U railway_user -d railway_gate_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - railway_network
+
+  # Backend API Server
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: railway_backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://railway_user:railway_password@postgres:5432/railway_gate_db
+      BACKEND_HOST: 0.0.0.0
+      BACKEND_PORT: 8000
+      BACKEND_ENV: development
+      TRAIN_DATA_PROVIDER: mock
+      GPS_UPDATE_INTERVAL: 5000
+      TRAIN_UPDATE_INTERVAL: 10000
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - railway_network
+
+  # Frontend Development Server
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: railway_frontend
+    depends_on:
+      - backend
+    environment:
+      REACT_APP_API_URL: http://localhost:8000
+      REACT_APP_WS_URL: ws://localhost:8000
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend/src:/app/src
+    command: npm start
+    networks:
+      - railway_network
+
+networks:
+  railway_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local

@@ -1,541 +1,522 @@
-# Railway Gate Train Prediction & Alert System - Architecture
+# Railway Gate Train Prediction & Alert System - Architecture Document
 
-## 1. Project Overview
+## System Overview
 
-This is a production-grade, full-stack real-time system that:
-- Detects user GPS location
-- Identifies the nearest railway level crossing/gate
-- Tracks live train positions
-- Predicts train arrival at the railway gate
-- Sends real-time alerts and notifications
+This document describes the architecture, design decisions, and implementation details of the Railway Gate Train Prediction & Alert System.
 
----
-
-## 2. Technical Architecture
-
-### 2.1 System Architecture Diagram
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         Frontend (React)                        │
-│  ┌──────────────┐  ┌─────────────┐  ┌──────────────┐          │
-│  │ Map Display  │  │ Notification│  │ User Location│          │
-│  │  (Leaflet)   │  │   System    │  │  Tracking    │          │
-│  └──────┬───────┘  └──────┬──────┘  └──────┬───────┘          │
-└─────────┼────────────────┼──────────────────┼──────────────────┘
-          │                │                  │
-          └────────────────┼──────────────────┘
-                          │
-              WebSocket / Server-Sent Events
-                          │
-┌─────────────────────────▼──────────────────────────────────────┐
-│                    Backend (FastAPI)                           │
-│  ┌───────────────┐  ┌────────────────┐  ┌──────────────────┐ │
-│  │ REST API      │  │ WebSocket      │  │ Real-time Event  │ │
-│  │ Endpoints     │  │ Handler        │  │ Manager          │ │
-│  └───────┬───────┘  └────────┬───────┘  └────────┬─────────┘ │
-│          │                   │                   │            │
-│  ┌───────▼───────────────────▼───────────────────▼──────────┐ │
-│  │           Prediction & Processing Engine                │ │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │ │
-│  │  │ Nearest Gate │  │ Train Approach│  │ ETA Engine   │  │ │
-│  │  │  Calculator  │  │  Detector     │  │              │  │ │
-│  │  └──────────────┘  └──────────────┘  └──────────────┘  │ │
-│  └──────────────────────────────────────────────────────────┘ │
-│          │                                                     │
-│  ┌───────▼─────────────────────────────────────────────────┐ │
-│  │         Train Data Service Layer                        │ │
-│  │  ┌──────────────────────────────────────────────────┐  │ │
-│  │  │  Train Provider Interface (Abstract)             │  │ │
-│  │  │  ├── Live API Provider (when available)          │  │ │
-│  │  │  └── Mock Provider (for development)             │  │ │
-│  │  └──────────────────────────────────────────────────┘  │ │
-│  └────────────────────────┬─────────────────────────────────┘ │
-└─────────────────────────┬──────────────────────────────────────┘
-                          │
-        ┌─────────────────┼─────────────────┐
-        │                 │                 │
-   ┌────▼────┐    ┌──────▼──────┐   ┌─────▼──────┐
-   │PostgreSQL│    │External API │   │Mock Data   │
-   │  +PostGIS│    │(Railway)    │   │ Provider   │
-   └──────────┘    └─────────────┘   └────────────┘
-```
-
-### 2.2 Data Flow
-
-```
-User Location (GPS)
-    ↓
-[Nearest Gate Calculator] → Haversine Distance
-    ↓
-Railway Gate Selected
-    ↓
-[Fetch Approaching Trains] → Train Data Service
-    ↓
-[Train Direction Detector] → Analyze movement toward gate
-    ↓
-[ETA Prediction Engine] → Calculate arrival time
-    ↓
-[Real-time WebSocket] → Push to Frontend
-    ↓
-[Notification System] → Alert user
-    ↓
-Frontend: Update Map & Display ETA
-```
-
----
-
-## 3. Technology Stack
+## 1. Technical Stack
 
 ### Frontend
-- **React.js** (18.x)
-- **TypeScript** (for type safety)
-- **Leaflet** (interactive maps)
-- **Axios** (HTTP client)
-- **Socket.IO Client** (WebSocket)
-- **React Query** (data fetching)
-- **Tailwind CSS** (styling)
+- **React.js** - UI framework
+- **TypeScript/JavaScript** - Programming language
+- **Leaflet** - Map display and management
+- **Axios** - HTTP client
+- **WebSocket API** - Real-time communication
+- **CSS3** - Styling
 
 ### Backend
-- **Python 3.11+**
-- **FastAPI** (async web framework)
-- **SQLAlchemy** (ORM)
-- **Pydantic** (data validation)
-- **PostgreSQL** (database)
-- **PostGIS** (geospatial queries)
-- **python-socketio** (WebSocket)
-- **APScheduler** (scheduled tasks)
+- **Python 3.9+** - Programming language
+- **FastAPI** - Web framework
+- **Uvicorn** - ASGI server
+- **SQLAlchemy** - ORM
+- **Pydantic** - Data validation
+- **Python-socketio** - WebSocket support
+
+### Database
+- **PostgreSQL 12+** - Relational database
+- **PostGIS** - Geospatial extension
+- **pgAdmin** - Database management tool
 
 ### Infrastructure
-- **Docker & Docker Compose** (containerization)
-- **PostgreSQL 14+** (database)
-- **Redis** (optional: caching, real-time message queue)
+- **Docker** - Containerization
+- **Docker Compose** - Multi-container orchestration
+- **Redis** (Optional) - Caching and pub/sub
 
-### External Services
-- **OpenStreetMap / Leaflet** (map tiles)
-- **Railway API** (to be verified and integrated)
+## 2. Data Flow
 
----
+### Real-time Train Tracking Flow
 
-## 4. Database Schema
-
-### Tables Structure
-
-#### `railway_stations`
-```sql
-CREATE TABLE railway_stations (
-    id SERIAL PRIMARY KEY,
-    station_code VARCHAR(20) UNIQUE NOT NULL,
-    station_name VARCHAR(255) NOT NULL,
-    latitude DECIMAL(10, 8) NOT NULL,
-    longitude DECIMAL(11, 8) NOT NULL,
-    railway_line VARCHAR(100) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX idx_station_location ON railway_stations USING GIST (
-    ST_Point(longitude, latitude)
-);
+```
+┌─────────────┐
+│ User Device │
+│ (Browser)   │
+└──────┬──────┘
+       │ 1. Share GPS Location
+       │ 2. Get Nearest Gate
+       ▼
+┌─────────────────────────────┐
+│ Frontend (React)            │
+│ - GPS Geolocation API       │
+│ - Leaflet Map Display       │
+│ - WebSocket Connection      │
+└──────┬──────────────────────┘
+       │ 3. REST API Calls
+       │ 4. WebSocket Subscribe
+       ▼
+┌─────────────────────────────┐
+│ Backend (FastAPI)           │
+│ - Gate Management API       │
+│ - WebSocket Manager         │
+│ - Prediction Engine         │
+└──────┬──────────────────────┘
+       │ 5. Query Database
+       │ 6. Fetch Train Data
+       ▼
+┌─────────────────────────────┐
+│ Services Layer              │
+│ - Gate Service              │
+│ - Train Data Service        │
+│ - Prediction Engine         │
+│ - Geospatial Calculator     │
+└──────┬──────────────────────┘
+       │ 7. Database Query
+       │ 8. Mock/Real API Call
+       ▼
+┌─────────────────────────────┐
+│ Data Layer                  │
+│ - PostgreSQL + PostGIS      │
+│ - Train Data Provider       │
+└─────────────────────────────┘
 ```
 
-#### `railway_gates`
+## 3. Database Schema
+
+### Tables
+
+#### railway_gates
 ```sql
 CREATE TABLE railway_gates (
-    id SERIAL PRIMARY KEY,
-    gate_name VARCHAR(255) NOT NULL,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(255) NOT NULL,
     latitude DECIMAL(10, 8) NOT NULL,
     longitude DECIMAL(11, 8) NOT NULL,
-    station_id INTEGER REFERENCES railway_stations(id),
+    geom GEOMETRY(Point, 4326) NOT NULL,
+    station_id UUID NOT NULL REFERENCES railway_stations(id),
     railway_line VARCHAR(100) NOT NULL,
-    station_distance_km DECIMAL(8, 3),
-    estimated_travel_time_seconds INTEGER,
-    gate_direction VARCHAR(50),
+    station_distance FLOAT,  -- Distance from station to gate in KM
+    estimated_travel_time INT,  -- Estimated travel time in seconds
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX idx_gate_location ON railway_gates USING GIST (
-    ST_Point(longitude, latitude)
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_geom (geom),
+    INDEX idx_railway_line (railway_line)
 );
 ```
 
-#### `trains`
+#### railway_stations
+```sql
+CREATE TABLE railway_stations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    station_code VARCHAR(50) UNIQUE NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    latitude DECIMAL(10, 8) NOT NULL,
+    longitude DECIMAL(11, 8) NOT NULL,
+    geom GEOMETRY(Point, 4326) NOT NULL,
+    railway_line VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_geom (geom),
+    INDEX idx_railway_line (railway_line)
+);
+```
+
+#### trains
 ```sql
 CREATE TABLE trains (
-    id SERIAL PRIMARY KEY,
-    train_number VARCHAR(20) UNIQUE NOT NULL,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    train_number VARCHAR(50) UNIQUE NOT NULL,
     train_name VARCHAR(255) NOT NULL,
-    status VARCHAR(50) DEFAULT 'RUNNING',
+    railway_line VARCHAR(100) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_train_number (train_number),
+    INDEX idx_railway_line (railway_line)
 );
 ```
 
-#### `train_positions`
+#### train_positions
 ```sql
 CREATE TABLE train_positions (
-    id SERIAL PRIMARY KEY,
-    train_id INTEGER REFERENCES trains(id),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    train_id UUID NOT NULL REFERENCES trains(id),
     latitude DECIMAL(10, 8) NOT NULL,
     longitude DECIMAL(11, 8) NOT NULL,
-    speed_kmph DECIMAL(8, 2),
-    direction VARCHAR(50),
+    geom GEOMETRY(Point, 4326) NOT NULL,
+    speed_kmph FLOAT,
+    direction VARCHAR(50),  -- N, S, E, W, NE, NW, SE, SW
     timestamp TIMESTAMP NOT NULL,
-    source VARCHAR(50) DEFAULT 'API',
-    data_freshness_score DECIMAL(3, 2),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX idx_train_position_location ON train_positions USING GIST (
-    ST_Point(longitude, latitude)
-);
-CREATE INDEX idx_train_position_timestamp ON train_positions(timestamp DESC);
-```
-
-#### `train_predictions`
-```sql
-CREATE TABLE train_predictions (
-    id SERIAL PRIMARY KEY,
-    train_id INTEGER REFERENCES trains(id),
-    gate_id INTEGER REFERENCES railway_gates(id),
-    eta_seconds INTEGER,
-    eta_timestamp TIMESTAMP,
-    current_distance_km DECIMAL(8, 3),
-    approaching BOOLEAN DEFAULT FALSE,
-    direction_to_gate VARCHAR(50),
-    confidence_score DECIMAL(3, 2),
-    calculated_at TIMESTAMP,
+    is_stale BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    INDEX idx_train_id (train_id),
+    INDEX idx_timestamp (timestamp),
+    INDEX idx_geom (geom)
 );
-
-CREATE INDEX idx_prediction_gate ON train_predictions(gate_id);
-CREATE INDEX idx_prediction_train ON train_predictions(train_id);
 ```
 
-#### `station_gate_calibration`
-```sql
-CREATE TABLE station_gate_calibration (
-    id SERIAL PRIMARY KEY,
-    station_id INTEGER REFERENCES railway_stations(id),
-    gate_id INTEGER REFERENCES railway_gates(id),
-    distance_km DECIMAL(8, 3),
-    average_travel_time_seconds INTEGER,
-    sample_count INTEGER DEFAULT 1,
-    last_calibrated TIMESTAMP,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+## 4. API Endpoint Design
 
-CREATE UNIQUE INDEX idx_station_gate_pair ON station_gate_calibration(station_id, gate_id);
+### REST Endpoints
+
+#### Gates
+```
+GET /api/v1/gates
+  Query Parameters: limit, offset, railway_line
+  Response: [GateResponse]
+  
+GET /api/v1/gates/{gate_id}
+  Response: GateResponse
+  
+GET /api/v1/gates/nearest
+  Query Parameters: latitude, longitude, radius_km
+  Response: GateResponse
 ```
 
----
-
-## 5. Key Algorithms
-
-### 5.1 Nearest Gate Calculator
+#### Stations
 ```
-Input: User Latitude, User Longitude
-Output: Nearest Railway Gate
-
-Algorithm:
-1. Query all railway gates from database
-2. Calculate Haversine distance from user to each gate
-3. Filter gates within reasonable radius (e.g., 5 km)
-4. Return gate with minimum distance
-5. Also return top 3 alternatives
-
-Haversine Formula:
-a = sin²(Δφ/2) + cos φ1 ⋅ cos φ2 ⋅ sin²(Δλ/2)
-c = 2 ⋅ atan2( √a, √(1−a) )
-d = R ⋅ c
-
-where:
-- φ is latitude, λ is longitude, R is earth's radius (6371 km)
+GET /api/v1/stations
+  Query Parameters: limit, offset, railway_line
+  Response: [StationResponse]
+  
+GET /api/v1/stations/{station_id}
+  Response: StationResponse
 ```
 
-### 5.2 Train Direction Detector
+#### Trains
 ```
-Input: Previous Position, Current Position, Gate Position
-Output: Is train approaching gate?
+GET /api/v1/trains/nearby
+  Query Parameters: gate_id, radius_km
+  Response: [TrainResponse]
+  
+GET /api/v1/trains/{train_number}
+  Response: TrainResponse
+```
 
-Algorithm:
-1. Calculate vector from previous position to current position
-2. Calculate vector from current position to gate
-3. Calculate dot product of vectors
-4. If dot product < 0: train moving toward gate (approaching)
-5. If dot product > 0: train moving away from gate
-6. Calculate cross product for perpendicular distance
-7. Consider railway line geometry (if available)
+#### Predictions
+```
+GET /api/v1/predictions/{gate_id}
+  Response: PredictionResponse
+  
+GET /api/v1/predictions/{gate_id}/trains
+  Response: [TrainPredictionResponse]
+```
 
-Decision Tree:
-if train_on_gate_railway_line:
-    if distance_to_gate < last_distance_to_gate:
-        return APPROACHING
+#### Health
+```
+GET /api/v1/health
+  Response: {status: "healthy", timestamp: ISO8601}
+```
+
+### WebSocket Endpoints
+
+```
+WS /ws/gate/{gate_id}
+  Subscribe to real-time updates for a specific gate
+  Message Types:
+    - train_approaching
+    - train_entered
+    - train_passed
+    - prediction_update
+    - no_train_detected
+```
+
+## 5. Prediction Engine
+
+### ETA Calculation Algorithm
+
+```python
+def calculate_eta(train_position, gate_position, train_speed, historical_travel_time):
+    """
+    Calculate estimated time of arrival at the gate.
+    
+    Args:
+        train_position: (lat, lon)
+        gate_position: (lat, lon)
+        train_speed: km/h (may be None)
+        historical_travel_time: seconds (from station to gate)
+    
+    Returns:
+        eta_seconds: Estimated seconds until train reaches gate
+    """
+    
+    # Calculate straight-line distance using Haversine formula
+    distance_km = haversine_distance(train_position, gate_position)
+    
+    # Method 1: Use current speed if available and reliable
+    if train_speed and train_speed > 0 and is_speed_reliable(train_speed):
+        # Convert speed from km/h to km/s
+        speed_km_per_second = train_speed / 3600
+        eta_seconds = distance_km / speed_km_per_second
+        confidence = "HIGH"
+        
+    # Method 2: Use historical travel time as fallback
+    elif historical_travel_time:
+        # Scale historical time by current distance vs historical distance
+        historical_distance = get_station_to_gate_distance(gate_id)
+        if historical_distance > 0:
+            time_ratio = distance_km / historical_distance
+            eta_seconds = historical_travel_time * time_ratio
+            confidence = "MEDIUM"
+        else:
+            eta_seconds = historical_travel_time
+            confidence = "LOW"
+    
+    # Method 3: Default assumption (50 km/h average)
     else:
-        return MOVING_AWAY
-else:
-    return NOT_ON_TRACK
+        average_speed_kmh = 50
+        speed_km_per_second = average_speed_kmh / 3600
+        eta_seconds = distance_km / speed_km_per_second
+        confidence = "LOW"
+    
+    return {
+        "eta_seconds": max(0, eta_seconds),
+        "distance_km": distance_km,
+        "confidence": confidence,
+        "method": method_used
+    }
 ```
 
-### 5.3 ETA Prediction Engine
+### Train Approaching Detection
+
+```python
+def is_train_approaching(train_current_pos, train_prev_pos, gate_pos, threshold_km=5.0):
+    """
+    Determine if train is moving toward the gate.
+    
+    Conditions:
+    1. Train distance to gate < threshold
+    2. Distance is decreasing (current < previous)
+    3. Train direction aligns with gate direction
+    """
+    
+    current_distance = haversine_distance(train_current_pos, gate_pos)
+    previous_distance = haversine_distance(train_prev_pos, gate_pos)
+    
+    # Check if train is within threshold and getting closer
+    is_close = current_distance < threshold_km
+    is_getting_closer = current_distance < previous_distance
+    
+    # Calculate direction vector from train to gate
+    gate_direction = calculate_bearing(train_current_pos, gate_pos)
+    train_direction_deg = parse_direction(train.direction)
+    
+    # Check if direction is within ±45 degrees of gate
+    direction_diff = abs(gate_direction - train_direction_deg)
+    direction_diff = min(direction_diff, 360 - direction_diff)
+    is_aligned = direction_diff < 45
+    
+    return is_close and is_getting_closer and is_aligned
 ```
-Input: Train Position, Gate Position, Train Speed, Historical Data
-Output: ETA in seconds
 
-Algorithm - Primary (Speed-based):
-if train_speed > 0 and recent_speed_data:
-    distance_km = haversine(train_pos, gate_pos)
-    eta_seconds = (distance_km / speed_kmph) * 3600
-    confidence = HIGH
-else:
-    Algorithm - Secondary (Historical):
-    eta_seconds = fetch_calibrated_travel_time(station, gate)
-    confidence = MEDIUM
+## 6. Geospatial Calculations
 
-Stale Data Handling:
-if (now - last_update) > STALE_THRESHOLD:
-    confidence = REDUCED
-    mark prediction as "potentially outdated"
-    adjust eta_seconds with uncertainty margin (+30%)
+### Haversine Formula
 
-Output Format:
+```python
+import math
+
+def haversine_distance(lat1, lon1, lat2, lon2, radius_km=6371):
+    """
+    Calculate great-circle distance between two points.
+    
+    Args:
+        lat1, lon1: First point (degrees)
+        lat2, lon2: Second point (degrees)
+        radius_km: Earth radius in kilometers (default: 6371)
+    
+    Returns:
+        distance: Distance in kilometers
+    """
+    lat1_rad = math.radians(lat1)
+    lon1_rad = math.radians(lon1)
+    lat2_rad = math.radians(lat2)
+    lon2_rad = math.radians(lon2)
+    
+    dlat = lat2_rad - lat1_rad
+    dlon = lon2_rad - lon1_rad
+    
+    a = math.sin(dlat/2)**2 + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(dlon/2)**2
+    c = 2 * math.asin(math.sqrt(a))
+    
+    return radius_km * c
+```
+
+### Bearing Calculation
+
+```python
+def calculate_bearing(start_lat, start_lon, end_lat, end_lon):
+    """
+    Calculate bearing from start to end point (0-360 degrees).
+    0° = North, 90° = East, 180° = South, 270° = West
+    """
+    start_lat_rad = math.radians(start_lat)
+    start_lon_rad = math.radians(start_lon)
+    end_lat_rad = math.radians(end_lat)
+    end_lon_rad = math.radians(end_lon)
+    
+    dlon = end_lon_rad - start_lon_rad
+    
+    y = math.sin(dlon) * math.cos(end_lat_rad)
+    x = math.cos(start_lat_rad) * math.sin(end_lat_rad) - \
+        math.sin(start_lat_rad) * math.cos(end_lat_rad) * math.cos(dlon)
+    
+    bearing_rad = math.atan2(y, x)
+    bearing_deg = (math.degrees(bearing_rad) + 360) % 360
+    
+    return bearing_deg
+```
+
+## 7. Train Data Provider Interface
+
+### Abstract Provider
+
+```python
+from abc import ABC, abstractmethod
+from typing import List
+from datetime import datetime
+
+class TrainDataProvider(ABC):
+    """
+    Abstract base class for train data providers.
+    Implementations can fetch from mock data, real APIs, etc.
+    """
+    
+    @abstractmethod
+    async def get_train_positions(self, railway_line: str) -> List[TrainPosition]:
+        """Fetch current positions of all trains on a railway line."""
+        pass
+    
+    @abstractmethod
+    async def get_train_by_number(self, train_number: str) -> TrainPosition:
+        """Fetch position of a specific train."""
+        pass
+    
+    @abstractmethod
+    async def get_trains_in_region(self, lat: float, lon: float, radius_km: float) -> List[TrainPosition]:
+        """Fetch trains within a geographic region."""
+        pass
+    
+    @property
+    @abstractmethod
+    def is_healthy(self) -> bool:
+        """Check if data provider is functioning correctly."""
+        pass
+    
+    @property
+    @abstractmethod
+    def last_update_time(self) -> datetime:
+        """Return timestamp of last successful data fetch."""
+        pass
+```
+
+### Mock Provider Implementation
+
+The mock provider generates realistic simulated train data for development and testing.
+
+## 8. Real-time Communication (WebSocket)
+
+### Message Format
+
+```json
 {
-    eta_seconds: int,
-    eta_timestamp: ISO8601,
-    confidence: ENUM[HIGH, MEDIUM, LOW],
-    is_stale: bool,
-    calculated_at: ISO8601
+  "type": "train_approaching",
+  "gate_id": "uuid",
+  "train_number": "12345",
+  "eta_seconds": 120,
+  "distance_km": 2.5,
+  "speed_kmph": 60,
+  "timestamp": "2026-09-11T10:30:00Z",
+  "message": "Train 12345 approaching railway gate. ETA: 2 minutes."
 }
 ```
 
-### 5.4 Waiting Time Calculation
-```
-Input: ETA to Gate, Historical Gate Clearance Data
-Output: Estimated Waiting Time
+### Connection Manager
 
-If gate_clearance_data_available:
-    waiting_time = gate_arrival_eta + gate_clearance_time
-    confidence = MEDIUM
-Else:
-    waiting_time = null
-    message = "Gate clearance data unavailable"
-    confidence = NONE
+- Manages active WebSocket connections per gate
+- Broadcasts updates to all connected clients
+- Handles connection/disconnection events
+- Automatic reconnection logic on frontend
 
-Display to User:
-"Train arrival: ~{eta} seconds"
-"Gate clearance: Unknown (follow official signals)"
-```
+## 9. Error Handling Strategy
 
----
+### Backend Errors
+1. **Database Errors** → Log, return 500 with generic message
+2. **API Timeout** → Retry with exponential backoff
+3. **Invalid Input** → Return 400 with validation error
+4. **Not Found** → Return 404
+5. **Rate Limited** → Return 429, inform client to retry
 
-## 6. Real-Time Communication Strategy
+### Frontend Errors
+1. **GPS Unavailable** → Show fallback input for manual location
+2. **Network Offline** → Show offline indicator, cache last data
+3. **WebSocket Disconnected** → Auto-reconnect, show status
+4. **API Error** → Display user-friendly error message
 
-### WebSocket Events
+## 10. Security Considerations
 
-#### Frontend → Backend
-```
-CONNECT: /ws/gate/{gate_id}
-    → Subscribe to real-time updates for specific gate
+### API Security
+- CORS configuration to allow only frontend origin
+- Rate limiting to prevent abuse
+- Input validation and sanitization
+- SQL injection prevention via ORM
 
-USER_LOCATION: { latitude, longitude, accuracy, timestamp }
-    → Update user location for distance calculations
+### Data Privacy
+- User GPS location NOT persisted
+- Train data treated as public information
+- No personal information collected
+- HTTPS/WSS for encrypted communication
 
-DISCONNECT:
-    → Unsubscribe from gate updates
-```
+### Environment & Secrets
+- Database credentials in environment variables
+- API keys never exposed to frontend
+- `.env` file in `.gitignore`
+- `.env.example` provided as template
 
-#### Backend → Frontend
-```
-GATE_STATUS: { gate_id, approaching_trains, nearest_train_eta }
-    → General gate status update
-
-TRAIN_APPROACHING: { train_number, eta_seconds, distance_km, confidence }
-    → Alert when train is approaching
-
-TRAIN_UPDATE: { train_number, latitude, longitude, speed, timestamp }
-    → Regular train position updates
-
-TRAIN_PASSED: { train_number, passed_at }
-    → Notification after train passes gate
-
-WARNING_LEVEL_CHANGE: { level, message, eta_seconds }
-    → Warning state change (NO_TRAIN → DETECTED → APPROACHING → IMMEDIATE → PASSED)
-```
-
-### Update Frequency
-- **Train Position Updates**: Every 30-60 seconds
-- **ETA Recalculation**: Every 15-30 seconds (when train approaching)
-- **User Location Updates**: Every 30-60 seconds
-- **Prediction Updates**: Continuous (calculated server-side)
-
----
-
-## 7. Error Handling Strategy
-
-| Error Scenario | Handling |
-|---|---|
-| GPS unavailable | Display error message, suggest enabling location |
-| GPS permission denied | Request permission or show static map |
-| Poor GPS accuracy | Show accuracy indicator, allow manual refinement |
-| API rate limit | Implement exponential backoff, queue requests |
-| API timeout | Use cached data, mark as potentially stale |
-| Invalid coordinates | Reject, request new location |
-| No nearby gates | Display message, expand search radius |
-| No approaching trains | Show "safe to cross" (if no trains) |
-| Train data stale (>10 min) | Mark ETA as unreliable, show uncertainty |
-| Database connection failure | Return cached response or error |
-| WebSocket disconnect | Auto-reconnect with exponential backoff |
-
----
-
-## 8. Security Measures
-
-1. **API Key Management**
-   - Store all keys in `.env` file (never in code)
-   - Use `python-dotenv` to load secrets
-   - Validate environment on startup
-
-2. **Input Validation**
-   - Validate latitude/longitude ranges
-   - Sanitize all string inputs
-   - Rate limit API endpoints
-
-3. **Privacy**
-   - Do not permanently store user location
-   - Clear location data from memory after processing
-   - Provide `.env.example` without secrets
-
-4. **Frontend Security**
-   - Never expose API keys in frontend code
-   - Use CORS properly
-   - Implement CSP headers
-
-5. **Backend Security**
-   - Validate all external API responses
-   - Implement request signing
-   - Use HTTPS only in production
-
----
-
-## 9. Deployment Strategy
+## 11. Deployment Architecture
 
 ### Development
-- Local PostgreSQL + PostGIS
-- Docker Compose for local dev environment
-- Mock train data provider
+- Docker Compose stack
+- PostgreSQL + PostGIS in Docker
+- Backend and Frontend in separate containers
+- Hot reload enabled for development
 
 ### Production
-- Containerized backend (Docker)
-- Managed PostgreSQL (AWS RDS, Google Cloud SQL, or similar)
-- PostGIS extension enabled
-- Redis for caching/sessions
-- CDN for frontend assets
-- WebSocket load balancing (if needed)
+- Backend: Deployed as containerized service (Docker/Kubernetes)
+- Frontend: Static files served via CDN or nginx
+- Database: Managed PostgreSQL service (AWS RDS, Azure, etc.)
+- Load balancing and auto-scaling enabled
 
-### Scaling Considerations
-- Horizontally scale backend with load balancer
-- Use Redis for distributed WebSocket state
-- Implement database connection pooling
-- Cache frequently accessed data (gates, stations)
+## 12. Monitoring & Logging
 
----
+### Metrics
+- API response times
+- WebSocket connection count
+- Train data freshness
+- Prediction accuracy
+- Error rates
 
-## 10. Testing Strategy
+### Logs
+- Application logs to stdout (container-friendly)
+- Database query logs (development only)
+- WebSocket event logs
+- Train prediction logs for analysis
 
-### Unit Tests
-- Haversine distance calculation
-- Train direction detection
-- ETA prediction engine
-- Confidence scoring
+## 13. Limitations & Future Improvements
 
-### Integration Tests
-- Database operations
-- API endpoints
-- WebSocket connections
-- Train data provider integration
+### Current Limitations
+1. Straight-line distance calculation (doesn't follow railway tracks)
+2. No real railway track geometry data
+3. Mock train data for development
+4. Single geographic region support
 
-### End-to-End Tests
-- User location → nearest gate flow
-- Train detection → prediction → notification flow
-- Multiple trains handling
-- Error recovery scenarios
-
-### Test Scenarios (Covered)
-1. User near railway gate
-2. User far from gates
-3. No approaching train
-4. One approaching train
-5. Multiple approaching trains
-6. Train moving toward gate
-7. Train moving away from gate
-8. Train without scheduled stop
-9. Train with scheduled stop
-10. Stale train data
-11. API failure
-12. GPS failure
-13. Invalid coordinates
-14. Multiple railway lines
+### Future Enhancements
+1. Integrate real railway track data (OpenRailwayMap API)
+2. Support multiple geographic regions
+3. Machine learning-based prediction refinement
+4. Historical accuracy analytics
+5. Mobile app with native notifications
+6. Integration with official railway APIs
+7. Railway barrier status integration
+8. Multi-language support
 
 ---
 
-## 11. Extensibility Design
-
-### Easy to Add
-- **New Railway Gates**: Add to database, no code changes
-- **New Railway Stations**: Add to database, no code changes
-- **New Regions/States**: Add data, deploy, no architecture change
-
-### Provider Abstraction
-```python
-class TrainDataProvider(ABC):
-    @abstractmethod
-    async def fetch_train_positions(self) -> List[Train]:
-        pass
-
-class LiveAPIProvider(TrainDataProvider):
-    async def fetch_train_positions(self):
-        # Connect to verified live API
-        pass
-
-class MockProvider(TrainDataProvider):
-    async def fetch_train_positions(self):
-        # Return mock data for testing
-        pass
-```
-
-This allows easy switching between providers.
-
----
-
-## 12. Development Phases
-
-**Phase 1**: Frontend + Backend foundation, GPS, Map display  
-**Phase 2**: Database, Railway gates/stations data  
-**Phase 3**: Mock train data provider, basic API integration  
-**Phase 4**: Train direction detection, ETA prediction  
-**Phase 5**: Real-time WebSocket, notifications  
-**Phase 6**: Testing, error handling, documentation  
-
----
-
-## 13. Important Disclaimers
-
-- **Not a Safety-Critical System**: This is informational only
-- **Not a Railway Signalling System**: Do not rely for safety decisions
-- **Always Follow Official Signals**: Users must obey railway barriers/signals
-- **Prediction Uncertainty**: ETA is an estimate with confidence scoring
-- **Data Source Verification**: Only use verified, authorized APIs
-
----
-
-This architecture is designed for:
-- ✅ Production readiness
-- ✅ Scalability
-- ✅ Maintainability
-- ✅ Security
-- ✅ Extensibility
-- ✅ Clear data flow
-- ✅ Error resilience
-- ✅ Real-time capability
+**Last Updated**: September 2026
